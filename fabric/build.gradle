@@ -32,6 +32,8 @@ dependencies {
     include libs.bcrypt
     implementation libs.bytes
     include libs.bytes
+    implementation libs.mysql
+    include libs.mysql
 }
 
 loom {

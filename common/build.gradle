@@ -13,6 +13,14 @@ sourceSets {
             srcDirs = ["../../src/main/resources"]
         }
     }
+    test {
+        java {
+            srcDirs = ["../../src/test/java"]
+        }
+        resources {
+            srcDirs = ["../../src/test/resources"]
+        }
+    }
 }
 
 def minecraft_version = stonecutter.current.version == "26.1" ? libs.versions.minecraft26.get() : (stonecutter.current.version == "1.21.11" ? libs.versions.minecraft11.get() : libs.versions.minecraft.get())
@@ -43,4 +51,17 @@ dependencies {
 
     implementation libs.jetbrains.annotations
     implementation libs.bcrypt
+    implementation libs.mysql
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testImplementation 'org.slf4j:slf4j-api:2.0.12'
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.12'
+    testImplementation 'com.google.code.gson:gson:2.10.1'
 }
+
+test {
+    useJUnitPlatform()
+}
+
+

@@ -76,9 +76,25 @@ public class EasyLoginConfig {
     public String msgMinPasswordLength = "&cPassword must be at least {min} characters.";
     public int minPasswordLength = 4;
 
-    // ─── Server info placeholders ───────────────────────────
+    // ─── Storage ────────────────────────────────────────────
+    public String storageMode = "json";
+    public String dbHost = "127.0.0.1";
+    public int dbPort = 3306;
+    public String dbDatabase = "bigbang_auth";
+    public String dbUsername = "easylogin";
+    public String passwordEnv = "EASYLOGIN_DB_PASSWORD";
+    public int dbPoolSize = 10;
+    public int dbConnectTimeout = 10;
+
+    // ─── Server ─────────────────────────────────────────────
+    public String serverId = "allthemons";
     public String serverName = "Minecraft Server";
     public String discordLink = "";
+
+    // ─── WebStore ───────────────────────────────────────────
+    public boolean webstoreEnabled = false;
+    public String webstoreUrl = "http://localhost:3000/api/v1/auth_sync";
+    public String webstoreToken = "webstore_secret_token";
 
     private final Path configFile;
 
@@ -168,10 +184,28 @@ public class EasyLoginConfig {
             msgAdminNotRegistered = getString(messages, "adminNotRegistered", msgAdminNotRegistered);
             msgMinPasswordLength = getString(messages, "minPasswordLength", msgMinPasswordLength);
 
+            // Storage
+            Map<String, String> storage = sections.getOrDefault("storage", Map.of());
+            storageMode = getString(storage, "mode", storageMode);
+            dbHost = getString(storage, "host", dbHost);
+            dbPort = getInt(storage, "port", dbPort);
+            dbDatabase = getString(storage, "database", dbDatabase);
+            dbUsername = getString(storage, "username", dbUsername);
+            passwordEnv = getString(storage, "password_env", passwordEnv);
+            dbPoolSize = getInt(storage, "pool_size", dbPoolSize);
+            dbConnectTimeout = getInt(storage, "connect_timeout_seconds", dbConnectTimeout);
+
             // Server
             Map<String, String> server = sections.getOrDefault("server", Map.of());
+            serverId = getString(server, "server_id", serverId);
             serverName = getString(server, "name", serverName);
             discordLink = getString(server, "discord", discordLink);
+
+            // Webstore
+            Map<String, String> webstore = sections.getOrDefault("webstore", Map.of());
+            webstoreEnabled = getBool(webstore, "enabled", webstoreEnabled);
+            webstoreUrl = getString(webstore, "url", webstoreUrl);
+            webstoreToken = getString(webstore, "token", webstoreToken);
 
             EasyLoginConstants.LOGGER.info("Configuration loaded successfully");
 
@@ -270,11 +304,30 @@ public class EasyLoginConfig {
             w.write("adminNotRegistered = \"" + escapeToml(msgAdminNotRegistered) + "\"\n");
             w.write("minPasswordLength = \"" + escapeToml(msgMinPasswordLength) + "\"\n\n");
 
+            w.write("[storage]\n");
+            w.write("# Storage mode: 'json' or 'mysql'\n");
+            w.write("mode = \"" + storageMode + "\"\n");
+            w.write("host = \"" + dbHost + "\"\n");
+            w.write("port = " + dbPort + "\n");
+            w.write("database = \"" + dbDatabase + "\"\n");
+            w.write("username = \"" + dbUsername + "\"\n");
+            w.write("password_env = \"" + passwordEnv + "\"\n");
+            w.write("pool_size = " + dbPoolSize + "\n");
+            w.write("connect_timeout_seconds = " + dbConnectTimeout + "\n\n");
+
             w.write("[server]\n");
+            w.write("# Unique identifier for this server instance\n");
+            w.write("server_id = \"" + serverId + "\"\n");
             w.write("# Server display name for placeholders\n");
             w.write("name = \"" + escapeToml(serverName) + "\"\n");
             w.write("# Discord invite link (for {discord} placeholder)\n");
-            w.write("discord = \"" + escapeToml(discordLink) + "\"\n");
+            w.write("discord = \"" + escapeToml(discordLink) + "\"\n\n");
+
+            w.write("[webstore]\n");
+            w.write("# Enable WebStore identity integration\n");
+            w.write("enabled = " + webstoreEnabled + "\n");
+            w.write("url = \"" + escapeToml(webstoreUrl) + "\"\n");
+            w.write("token = \"" + escapeToml(webstoreToken) + "\"\n");
         }
     }
 

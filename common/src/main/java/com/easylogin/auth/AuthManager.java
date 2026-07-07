@@ -2,29 +2,28 @@ package com.easylogin.auth;
 
 import com.easylogin.EasyLoginConstants;
 import com.easylogin.config.EasyLoginConfig;
-import com.easylogin.data.PlayerAccount;
+import com.easylogin.data.AuthStorage;
+import com.easylogin.data.GlobalUser;
 import com.easylogin.data.PlayerDataStore;
+import com.easylogin.data.ServerIdentity;
 import com.easylogin.platform.PlatformHelper;
 import com.easylogin.util.MessageFormatter;
 import com.easylogin.util.PlayerUtil;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+
 //? if <=1.21.1 {
 /*import net.minecraft.resources.ResourceLocation;
 *///?} else {
 import net.minecraft.resources.Identifier;
 //?}
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Central authentication manager. Tracks login state, handles timeouts,
- * sends reminders, and orchestrates the full login/register flow.
- */
 public class AuthManager {
 
     public static AuthManager INSTANCE;
@@ -34,35 +33,38 @@ public class AuthManager {
     private final RateLimiter rateLimiter;
     private final MessageFormatter formatter;
 
-    // Players that have authenticated this session
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
-
-    // Timestamp when each unauthenticated player joined (for timeout)
     private final Map<UUID, Long> joinTimestamps = new ConcurrentHashMap<>();
-
-    // Last reminder timestamp per player (to avoid spam)
     private final Map<UUID, Long> lastReminder = new ConcurrentHashMap<>();
-
-    // Saved positions before limbo teleport (UUID → {x, y, z, yaw, pitch,
-    // dimension})
     private final Map<UUID, double[]> savedPositions = new ConcurrentHashMap<>();
     private final Map<UUID, String> savedDimensions = new ConcurrentHashMap<>();
-
-    // Logout cooldown tracking
     private final Map<UUID, Long> logoutCooldowns = new ConcurrentHashMap<>();
-
-    // Invincibility after login tracking (UUID → Expiry Timestamp)
     private final Map<UUID, Long> invincibilityExpiry = new ConcurrentHashMap<>();
+
+    // Cache to store if a player's nickname has a registered account (queried on join)
+    private final Map<UUID, Boolean> isRegisteredCache = new ConcurrentHashMap<>();
 
     public AuthManager(EasyLoginConfig config, PlayerDataStore dataStore) {
         this.config = config;
         this.dataStore = dataStore;
+        this.dataStore.init(config);
         this.rateLimiter = new RateLimiter(config.maxAttempts, config.attemptWindow, config.lockoutDuration);
         this.formatter = new MessageFormatter(config);
         INSTANCE = this;
     }
 
-    // ─── State queries ──────────────────────────────────────
+    private void runOnMainThread(ServerPlayer player, Runnable action) {
+        //? if <=1.21.1 {
+        /*MinecraftServer server = player.getServer();
+        *///?} else {
+        MinecraftServer server = player.level().getServer();
+        //?}
+        if (server != null) {
+            server.execute(action);
+        } else {
+            action.run();
+        }
+    }
 
     public boolean isAuthenticated(ServerPlayer player) {
         return authenticated.contains(player.getUUID());
@@ -85,12 +87,6 @@ public class AuthManager {
         return !authenticated.contains(player.getUUID());
     }
 
-    public boolean isRegistered(UUID uuid) {
-        return dataStore.isRegistered(uuid);
-    }
-
-    // ─── Player join/leave ──────────────────────────────────
-
     public void onPlayerJoin(ServerPlayer player) {
         if (PlatformHelper.INSTANCE.isFakePlayer(player))
             return;
@@ -99,26 +95,43 @@ public class AuthManager {
         joinTimestamps.put(uuid, System.currentTimeMillis());
         lastReminder.put(uuid, 0L);
 
-        // Save position before limbo
         savePlayerPosition(player);
 
-        // Teleport to limbo
         if (config.limboEnabled) {
             PlayerUtil.teleportToLimbo(player, config);
         }
 
-        // Send welcome message
-        boolean registered = dataStore.isRegistered(uuid);
-        String msg = registered ? config.msgWelcome : config.msgWelcomeFirstTime;
-        player.sendSystemMessage(formatter.format(msg, player));
+        String username = player.getName().getString();
+        String normalized = UsernameNormalizer.normalize(username);
 
-        // Send title
-        String titleText = registered ? "&eUse /login" : "&eUse /register";
-        String subtitleText = registered ? "&7Enter your password" : "&7Create your password";
-        PlayerUtil.sendTitle(player, formatter.colorize(titleText), formatter.colorize(subtitleText));
+        // Notify that authentication storage is loading
+        player.sendSystemMessage(Component.literal("§6[EasyLogin] §7Connecting to global accounts server..."));
 
-        EasyLoginConstants.LOGGER.info("Player {} joined, awaiting authentication (registered: {})",
-                player.getName().getString(), registered);
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                boolean registered = storage.getGlobalUser(normalized).isPresent();
+                isRegisteredCache.put(uuid, registered);
+
+                runOnMainThread(player, () -> {
+                    if (!joinTimestamps.containsKey(uuid)) return;
+
+                    String msg = registered ? config.msgWelcome : config.msgWelcomeFirstTime;
+                    player.sendSystemMessage(formatter.format(msg, player));
+
+                    String titleText = registered ? "&eUse /login" : "&eUse /register";
+                    String subtitleText = registered ? "&7Enter your password" : "&7Create your password";
+                    PlayerUtil.sendTitle(player, formatter.colorize(titleText), formatter.colorize(subtitleText));
+
+                    EasyLoginConstants.LOGGER.info("Player {} joined, awaiting auth (registered globally: {})", username, registered);
+                });
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Failed to fetch account status for " + username, e);
+                runOnMainThread(player, () -> {
+                    player.connection.disconnect(Component.literal("§cAuthentication database is offline. Please contact staff."));
+                });
+            }
+        });
     }
 
     public void onPlayerLeave(ServerPlayer player) {
@@ -133,32 +146,22 @@ public class AuthManager {
         savedDimensions.remove(uuid);
         logoutCooldowns.remove(uuid);
         invincibilityExpiry.remove(uuid);
+        isRegisteredCache.remove(uuid);
     }
 
-    // ─── Login ──────────────────────────────────────────────
-
-    public enum LoginResult {
-        SUCCESS, WRONG_PASSWORD, NOT_REGISTERED, ALREADY_LOGGED_IN, RATE_LIMITED
-    }
-
-    public LoginResult attemptLogin(ServerPlayer player, String password) {
+    public void attemptLogin(ServerPlayer player, String password) {
         UUID uuid = player.getUUID();
+        String username = player.getName().getString();
+        String ip = getPlayerIp(player);
 
         if (authenticated.contains(uuid)) {
             player.sendSystemMessage(formatter.format(config.msgAlreadyLoggedIn, player));
-            return LoginResult.ALREADY_LOGGED_IN;
+            return;
         }
 
-        if (!dataStore.isRegistered(uuid)) {
-            player.sendSystemMessage(formatter.format(config.msgNotRegistered, player));
-            return LoginResult.NOT_REGISTERED;
-        }
-
-        String ip = getPlayerIp(player);
         String rateKey = "ip:" + ip;
         String uuidKey = "uuid:" + uuid;
 
-        // Check rate limit
         long lockedIp = rateLimiter.isLocked(rateKey);
         long lockedUuid = rateLimiter.isLocked(uuidKey);
         long locked = Math.max(lockedIp, lockedUuid);
@@ -166,153 +169,277 @@ public class AuthManager {
             long minutes = (locked / 60000) + 1;
             player.sendSystemMessage(formatter.format(config.msgRateLimited, player,
                     Map.of("minutes", String.valueOf(minutes))));
-            return LoginResult.RATE_LIMITED;
+            return;
         }
 
-        PlayerAccount account = dataStore.getAccount(uuid).orElse(null);
-        if (account == null) {
-            return LoginResult.NOT_REGISTERED;
+        if (!UsernameNormalizer.isValid(username)) {
+            player.sendSystemMessage(Component.literal("§cInvalid nickname."));
+            return;
         }
 
-        if (PasswordService.verify(password, account.getPasswordHash())) {
-            // Success
-            authenticatePlayer(player);
-            account.recordLogin(ip);
-            dataStore.updateAccount(account);
-            rateLimiter.clear(rateKey);
-            rateLimiter.clear(uuidKey);
+        String normalized = UsernameNormalizer.normalize(username);
+        player.sendSystemMessage(Component.literal("§6[EasyLogin] §7Verifying password..."));
 
-            player.sendSystemMessage(formatter.format(config.msgLoginSuccess, player));
-            PlayerUtil.playSound(player, config.soundLoginSuccess);
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                Optional<GlobalUser> userOpt = storage.getGlobalUser(normalized);
 
-            EasyLoginConstants.LOGGER.info("Player {} logged in successfully from {}",
-                    player.getName().getString(), ip);
-            return LoginResult.SUCCESS;
-        } else {
-            // Failed
-            int remainingIp = rateLimiter.recordFailure(rateKey);
-            int remainingUuid = rateLimiter.recordFailure(uuidKey);
-            int remaining = Math.min(
-                    remainingIp == -1 ? 0 : remainingIp,
-                    remainingUuid == -1 ? 0 : remainingUuid);
+                if (!userOpt.isPresent()) {
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(formatter.format(config.msgNotRegistered, player));
+                        PlayerUtil.playSound(player, config.soundLoginFail);
+                    });
+                    return;
+                }
 
-            if (remaining <= 0) {
-                long lockoutMinutes = config.lockoutDuration;
-                player.sendSystemMessage(formatter.format(config.msgRateLimited, player,
-                        Map.of("minutes", String.valueOf(lockoutMinutes))));
-                EasyLoginConstants.LOGGER.warn("Player {} locked out (too many attempts) from {}",
-                        player.getName().getString(), ip);
-            } else {
-                player.sendSystemMessage(formatter.format(config.msgWrongPassword, player,
-                        Map.of("attempts", String.valueOf(remaining))));
+                GlobalUser user = userOpt.get();
+
+                if (!"active".equalsIgnoreCase(user.getStatus())) {
+                    storage.logAudit("LOGIN_BLOCKED", username, uuid, config.serverId, ip, "Attempt to login to a blocked account");
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(Component.literal("§cYour account is currently blocked."));
+                        PlayerUtil.playSound(player, config.soundLoginFail);
+                    });
+                    return;
+                }
+
+                if (PasswordService.verify(password, user.getPasswordDigest())) {
+                    // Check local UUID conflict
+                    if (storage.hasUuidConflict(config.serverId, uuid, user.getId())) {
+                        storage.logAudit("LOGIN_CONFLICT", username, uuid, config.serverId, ip, "Minecraft UUID belongs to another global account on this server");
+                        runOnMainThread(player, () -> {
+                            player.sendSystemMessage(Component.literal("§cThis Minecraft identity is registered to another account."));
+                            PlayerUtil.playSound(player, config.soundLoginFail);
+                        });
+                        return;
+                    }
+
+                    // Update identity
+                    Optional<ServerIdentity> identityOpt = storage.getServerIdentity(user.getId(), config.serverId);
+                    ServerIdentity identity;
+                    if (identityOpt.isPresent()) {
+                        identity = identityOpt.get();
+                        identity.setCurrentUuid(uuid);
+                        identity.setLastSeenAt(System.currentTimeMillis());
+                        identity.setLastAuthenticatedAt(System.currentTimeMillis());
+                        identity.setUpdatedAt(System.currentTimeMillis());
+                    } else {
+                        identity = new ServerIdentity();
+                        identity.setAuthUserId(user.getId());
+                        identity.setServerId(config.serverId);
+                        identity.setCurrentUuid(uuid);
+                    }
+                    storage.saveServerIdentity(identity);
+
+                    storage.recordUuidHistory(identity.getId(), config.serverId, uuid, "login");
+
+                    user.setLastGlobalLoginAt(System.currentTimeMillis());
+                    storage.saveGlobalUser(user);
+
+                    storage.logAudit("LOGIN_SUCCESS", username, uuid, config.serverId, ip, "Successful login");
+                    rateLimiter.clear(rateKey);
+                    rateLimiter.clear(uuidKey);
+
+                    // Rails WebStore Sync (Asynchronous)
+                    WebStoreSyncService.syncAccount(config, user, uuid);
+
+                    runOnMainThread(player, () -> {
+                        authenticatePlayer(player);
+                        player.sendSystemMessage(formatter.format(config.msgLoginSuccess, player));
+                        PlayerUtil.playSound(player, config.soundLoginSuccess);
+                        EasyLoginConstants.LOGGER.info("Player {} logged in successfully from {}", username, ip);
+                    });
+                } else {
+                    int remainingIp = rateLimiter.recordFailure(rateKey);
+                    int remainingUuid = rateLimiter.recordFailure(uuidKey);
+                    int remaining = Math.min(
+                            remainingIp == -1 ? 0 : remainingIp,
+                            remainingUuid == -1 ? 0 : remainingUuid);
+
+                    storage.logAudit("LOGIN_FAIL_PASSWORD", username, uuid, config.serverId, ip, "Wrong password attempt");
+
+                    runOnMainThread(player, () -> {
+                        if (remaining <= 0) {
+                            long lockoutMinutes = config.lockoutDuration;
+                            player.sendSystemMessage(formatter.format(config.msgRateLimited, player,
+                                    Map.of("minutes", String.valueOf(lockoutMinutes))));
+                            EasyLoginConstants.LOGGER.warn("Player {} locked out (too many attempts) from {}", username, ip);
+                        } else {
+                            player.sendSystemMessage(formatter.format(config.msgWrongPassword, player,
+                                    Map.of("attempts", String.valueOf(remaining))));
+                        }
+                        PlayerUtil.playSound(player, config.soundLoginFail);
+                    });
+                }
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Failed to authenticate user " + username, e);
+                runOnMainThread(player, () -> {
+                    player.sendSystemMessage(Component.literal("§cAn internal database error occurred. Login failed."));
+                });
             }
-
-            PlayerUtil.playSound(player, config.soundLoginFail);
-            return LoginResult.WRONG_PASSWORD;
-        }
+        });
     }
 
-    // ─── Register ───────────────────────────────────────────
-
-    public enum RegisterResult {
-        SUCCESS, ALREADY_REGISTERED, PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, ALREADY_LOGGED_IN
-    }
-
-    public RegisterResult attemptRegister(ServerPlayer player, String password, String confirmPassword) {
+    public void attemptRegister(ServerPlayer player, String password, String confirmPassword) {
         UUID uuid = player.getUUID();
+        String username = player.getName().getString();
+        String ip = getPlayerIp(player);
 
         if (authenticated.contains(uuid)) {
             player.sendSystemMessage(formatter.format(config.msgAlreadyLoggedIn, player));
-            return RegisterResult.ALREADY_LOGGED_IN;
-        }
-
-        if (dataStore.isRegistered(uuid)) {
-            player.sendSystemMessage(formatter.format(config.msgAlreadyRegistered, player));
-            return RegisterResult.ALREADY_REGISTERED;
+            return;
         }
 
         if (!password.equals(confirmPassword)) {
             player.sendSystemMessage(formatter.format(config.msgPasswordMismatch, player));
-            return RegisterResult.PASSWORD_MISMATCH;
+            return;
         }
 
         if (password.length() < config.minPasswordLength) {
             player.sendSystemMessage(formatter.format(config.msgMinPasswordLength, player,
                     Map.of("min", String.valueOf(config.minPasswordLength))));
-            return RegisterResult.PASSWORD_TOO_SHORT;
+            return;
         }
 
-        String hash = PasswordService.hash(password);
-        String ip = getPlayerIp(player);
-        PlayerAccount account = new PlayerAccount(uuid, player.getName().getString(), hash, ip);
-
-        if (dataStore.register(account)) {
-            authenticatePlayer(player);
-            player.sendSystemMessage(formatter.format(config.msgRegisterSuccess, player));
-            PlayerUtil.playSound(player, config.soundLoginSuccess);
-
-            EasyLoginConstants.LOGGER.info("Player {} registered and logged in from {}",
-                    player.getName().getString(), ip);
-            return RegisterResult.SUCCESS;
+        if (!UsernameNormalizer.isValid(username)) {
+            player.sendSystemMessage(Component.literal("§cInvalid username. Only alphanumeric characters and underscores are allowed."));
+            return;
         }
 
-        return RegisterResult.ALREADY_REGISTERED;
+        String normalized = UsernameNormalizer.normalize(username);
+        player.sendSystemMessage(Component.literal("§6[EasyLogin] §7Creating account..."));
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                Optional<GlobalUser> existing = storage.getGlobalUser(normalized);
+
+                if (existing.isPresent()) {
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(formatter.format(config.msgAlreadyRegistered, player));
+                    });
+                    return;
+                }
+
+                // Check local UUID conflict
+                if (storage.hasUuidConflict(config.serverId, uuid, 0)) {
+                    storage.logAudit("REGISTER_CONFLICT", username, uuid, config.serverId, ip, "Minecraft UUID belongs to another global account on this server");
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(Component.literal("§cThis Minecraft identity is registered to another account."));
+                        PlayerUtil.playSound(player, config.soundLoginFail);
+                    });
+                    return;
+                }
+
+                String hash = PasswordService.hash(password);
+
+                GlobalUser user = new GlobalUser();
+                user.setUsernameDisplay(username);
+                user.setUsernameNormalized(normalized);
+                user.setPasswordDigest(hash);
+                user.setStatus("active");
+                storage.saveGlobalUser(user);
+
+                ServerIdentity identity = new ServerIdentity();
+                identity.setAuthUserId(user.getId());
+                identity.setServerId(config.serverId);
+                identity.setCurrentUuid(uuid);
+                storage.saveServerIdentity(identity);
+
+                storage.recordUuidHistory(identity.getId(), config.serverId, uuid, "register");
+                storage.logAudit("REGISTER_SUCCESS", username, uuid, config.serverId, ip, "Account registered successfully");
+
+                // Rails WebStore Sync (Asynchronous)
+                WebStoreSyncService.syncAccount(config, user, uuid);
+
+                runOnMainThread(player, () -> {
+                    isRegisteredCache.put(uuid, true);
+                    authenticatePlayer(player);
+                    player.sendSystemMessage(formatter.format(config.msgRegisterSuccess, player));
+                    PlayerUtil.playSound(player, config.soundLoginSuccess);
+                    EasyLoginConstants.LOGGER.info("Player {} registered and logged in from {}", username, ip);
+                });
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Failed to register account for " + username, e);
+                runOnMainThread(player, () -> {
+                    player.sendSystemMessage(Component.literal("§cAn internal database error occurred. Registration failed."));
+                });
+            }
+        });
     }
 
-    // ─── Change Password ────────────────────────────────────
-
-    public enum ChangePasswordResult {
-        SUCCESS, WRONG_OLD_PASSWORD, PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, NOT_LOGGED_IN, NOT_REGISTERED
-    }
-
-    public ChangePasswordResult changePassword(ServerPlayer player, String oldPassword, String newPassword,
-            String confirmNew) {
+    public void changePassword(ServerPlayer player, String oldPassword, String newPassword, String confirmNew) {
         UUID uuid = player.getUUID();
+        String username = player.getName().getString();
 
         if (!authenticated.contains(uuid)) {
             player.sendSystemMessage(formatter.format(config.msgBlocked, player));
-            return ChangePasswordResult.NOT_LOGGED_IN;
-        }
-
-        PlayerAccount account = dataStore.getAccount(uuid).orElse(null);
-        if (account == null) {
-            return ChangePasswordResult.NOT_REGISTERED;
-        }
-
-        if (!PasswordService.verify(oldPassword, account.getPasswordHash())) {
-            player.sendSystemMessage(formatter.format(config.msgWrongOldPassword, player));
-            return ChangePasswordResult.WRONG_OLD_PASSWORD;
+            return;
         }
 
         if (!newPassword.equals(confirmNew)) {
             player.sendSystemMessage(formatter.format(config.msgPasswordMismatch, player));
-            return ChangePasswordResult.PASSWORD_MISMATCH;
+            return;
         }
 
         if (newPassword.length() < config.minPasswordLength) {
             player.sendSystemMessage(formatter.format(config.msgMinPasswordLength, player,
                     Map.of("min", String.valueOf(config.minPasswordLength))));
-            return ChangePasswordResult.PASSWORD_TOO_SHORT;
+            return;
         }
 
-        account.setPasswordHash(PasswordService.hash(newPassword));
-        dataStore.updateAccount(account);
-        player.sendSystemMessage(formatter.format(config.msgPasswordChanged, player));
+        String normalized = UsernameNormalizer.normalize(username);
+        player.sendSystemMessage(Component.literal("§6[EasyLogin] §7Changing password..."));
 
-        EasyLoginConstants.LOGGER.info("Player {} changed their password", player.getName().getString());
-        return ChangePasswordResult.SUCCESS;
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                Optional<GlobalUser> userOpt = storage.getGlobalUser(normalized);
+
+                if (!userOpt.isPresent()) {
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(formatter.format(config.msgNotRegistered, player));
+                    });
+                    return;
+                }
+
+                GlobalUser user = userOpt.get();
+
+                if (!PasswordService.verify(oldPassword, user.getPasswordDigest())) {
+                    runOnMainThread(player, () -> {
+                        player.sendSystemMessage(formatter.format(config.msgWrongOldPassword, player));
+                    });
+                    return;
+                }
+
+                user.setPasswordDigest(PasswordService.hash(newPassword));
+                user.setPasswordChangedAt(System.currentTimeMillis());
+                storage.saveGlobalUser(user);
+
+                storage.logAudit("CHANGE_PASSWORD", username, uuid, config.serverId, getPlayerIp(player), "Password changed successfully");
+
+                runOnMainThread(player, () -> {
+                    player.sendSystemMessage(formatter.format(config.msgPasswordChanged, player));
+                    EasyLoginConstants.LOGGER.info("Player {} changed their password", username);
+                });
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Failed to change password for " + username, e);
+                runOnMainThread(player, () -> {
+                    player.sendSystemMessage(Component.literal("§cAn internal database error occurred. Password not changed."));
+                });
+            }
+        });
     }
-
-    // ─── Logout ─────────────────────────────────────────────
 
     public boolean logout(ServerPlayer player) {
         UUID uuid = player.getUUID();
+        String username = player.getName().getString();
         if (!authenticated.contains(uuid))
             return false;
         if (!config.enableLogout)
             return false;
 
-        // Check cooldown
         Long lastLogout = logoutCooldowns.get(uuid);
         if (lastLogout != null) {
             long elapsed = (System.currentTimeMillis() - lastLogout) / 1000;
@@ -327,47 +454,111 @@ public class AuthManager {
         deauthenticatePlayer(player);
         logoutCooldowns.put(uuid, System.currentTimeMillis());
         player.sendSystemMessage(formatter.format(config.msgLogoutSuccess, player));
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                dataStore.getStorage().logAudit("LOGOUT", username, uuid, config.serverId, getPlayerIp(player), "Logout performed locally");
+            } catch (Exception e) {
+                // Ignore audit failure on logout
+            }
+        });
+
         return true;
     }
 
-    // ─── Admin commands ─────────────────────────────────────
-
     public void forceLogin(ServerPlayer target) {
+        UUID uuid = target.getUUID();
+        String username = target.getName().getString();
+        String normalized = UsernameNormalizer.normalize(username);
+        String ip = getPlayerIp(target);
+
         authenticatePlayer(target);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                Optional<GlobalUser> userOpt = storage.getGlobalUser(normalized);
+                if (userOpt.isPresent()) {
+                    GlobalUser user = userOpt.get();
+                    Optional<ServerIdentity> identityOpt = storage.getServerIdentity(user.getId(), config.serverId);
+                    ServerIdentity identity;
+                    if (identityOpt.isPresent()) {
+                        identity = identityOpt.get();
+                        identity.setCurrentUuid(uuid);
+                        identity.setLastSeenAt(System.currentTimeMillis());
+                        identity.setLastAuthenticatedAt(System.currentTimeMillis());
+                        identity.setUpdatedAt(System.currentTimeMillis());
+                    } else {
+                        identity = new ServerIdentity();
+                        identity.setAuthUserId(user.getId());
+                        identity.setServerId(config.serverId);
+                        identity.setCurrentUuid(uuid);
+                    }
+                    storage.saveServerIdentity(identity);
+                    storage.recordUuidHistory(identity.getId(), config.serverId, uuid, "force_login");
+                }
+                storage.logAudit("FORCE_LOGIN", username, uuid, config.serverId, ip, "Admin force-logged in user");
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Error in forceLogin async", e);
+            }
+        });
     }
 
     public void forceRegister(ServerPlayer target, String password) {
         UUID uuid = target.getUUID();
-        String hash = PasswordService.hash(password);
+        String username = target.getName().getString();
+        String normalized = UsernameNormalizer.normalize(username);
         String ip = getPlayerIp(target);
-        PlayerAccount account = new PlayerAccount(uuid, target.getName().getString(), hash, ip);
-
-        if (dataStore.isRegistered(uuid)) {
-            account = dataStore.getAccount(uuid).orElse(account);
-            account.setPasswordHash(hash);
-            dataStore.updateAccount(account);
-        } else {
-            dataStore.register(account);
-        }
 
         authenticatePlayer(target);
-    }
 
-    public boolean resetPassword(UUID uuid) {
-        return dataStore.removeAccount(uuid);
-    }
+        CompletableFuture.runAsync(() -> {
+            try {
+                AuthStorage storage = dataStore.getStorage();
+                String hash = PasswordService.hash(password);
 
-    public boolean purgeAccount(UUID uuid) {
-        authenticated.remove(uuid);
-        return dataStore.removeAccount(uuid);
-    }
+                Optional<GlobalUser> userOpt = storage.getGlobalUser(normalized);
+                GlobalUser user;
+                if (userOpt.isPresent()) {
+                    user = userOpt.get();
+                    user.setPasswordDigest(hash);
+                    user.setPasswordChangedAt(System.currentTimeMillis());
+                    storage.saveGlobalUser(user);
+                } else {
+                    user = new GlobalUser();
+                    user.setUsernameDisplay(username);
+                    user.setUsernameNormalized(normalized);
+                    user.setPasswordDigest(hash);
+                    user.setStatus("active");
+                    storage.saveGlobalUser(user);
+                }
 
-    // ─── Tick (called every server tick) ────────────────────
+                Optional<ServerIdentity> identityOpt = storage.getServerIdentity(user.getId(), config.serverId);
+                ServerIdentity identity;
+                if (identityOpt.isPresent()) {
+                    identity = identityOpt.get();
+                    identity.setCurrentUuid(uuid);
+                    identity.setLastSeenAt(System.currentTimeMillis());
+                    identity.setLastAuthenticatedAt(System.currentTimeMillis());
+                    identity.setUpdatedAt(System.currentTimeMillis());
+                } else {
+                    identity = new ServerIdentity();
+                    identity.setAuthUserId(user.getId());
+                    identity.setServerId(config.serverId);
+                    identity.setCurrentUuid(uuid);
+                }
+                storage.saveServerIdentity(identity);
+                storage.recordUuidHistory(identity.getId(), config.serverId, uuid, "force_register");
+
+                storage.logAudit("FORCE_REGISTER", username, uuid, config.serverId, ip, "Admin force-registered user");
+            } catch (Exception e) {
+                EasyLoginConstants.LOGGER.error("Error in forceRegister async", e);
+            }
+        });
+    }
 
     public void onServerTick(MinecraftServer server) {
         long now = System.currentTimeMillis();
-
-        // Create a copy to avoid ConcurrentModificationException during player kicks
         List<ServerPlayer> players = new ArrayList<>(server.getPlayerList().getPlayers());
 
         for (ServerPlayer player : players) {
@@ -378,32 +569,27 @@ public class AuthManager {
             if (authenticated.contains(uuid))
                 continue;
 
-            // Check timeout
             Long joinTime = joinTimestamps.get(uuid);
             if (joinTime != null) {
                 long elapsed = (now - joinTime) / 1000;
                 if (elapsed >= config.loginTimeout) {
-                    // Kick for timeout
                     player.connection.disconnect(Component.literal(formatter.colorize(config.msgKicked)));
-                    EasyLoginConstants.LOGGER.info("Player {} kicked for login timeout",
-                            player.getName().getString());
+                    EasyLoginConstants.LOGGER.info("Player {} kicked for login timeout", player.getName().getString());
                     continue;
                 }
             }
 
-            // Send reminder
             Long lastRem = lastReminder.get(uuid);
             if (lastRem != null) {
                 long elapsed = (now - lastRem) / 1000;
                 if (elapsed >= config.reminderInterval) {
-                    boolean registered = dataStore.isRegistered(uuid);
+                    boolean registered = isRegisteredCache.getOrDefault(uuid, false);
                     String msg = registered ? config.msgActionBarReminder : config.msgActionBarReminderNew;
                     PlayerUtil.sendActionBar(player, formatter.format(msg, player));
                     lastReminder.put(uuid, now);
                 }
             }
 
-            // Freeze or Limbo correction
             if (config.blockMovement) {
                 if (config.limboEnabled) {
                     double dx = Math.abs(player.getX() - config.limboX);
@@ -412,34 +598,26 @@ public class AuthManager {
                         PlayerUtil.teleportToLimbo(player, config);
                     }
                 } else {
-                    // Limbo disabled but freeze enabled: keep at saved position
                     double[] pos = savedPositions.get(uuid);
                     if (pos != null) {
                         double dx = Math.abs(player.getX() - pos[0]);
                         double dy = Math.abs(player.getY() - pos[1]);
                         double dz = Math.abs(player.getZ() - pos[2]);
 
-                        // Check if player moved significantly (including Y axis)
                         if (dx > 0.1 || dy > 0.1 || dz > 0.1) {
-                            // Teleport back to exact spawn spot including rotation
                             player.teleportTo(pos[0], pos[1], pos[2]);
-
-                            // Reset velocity to prevent upward momentum or falling loops
                             player.setDeltaMovement(0, 0, 0);
-                            player.hurtMarked = true; // Sync velocity to client
+                            player.hurtMarked = true;
                         }
                     }
                 }
             }
         }
 
-        // Periodic cleanup of rate limiter (every ~30 seconds = 600 ticks)
         if (server.getTickCount() % 600 == 0) {
             rateLimiter.cleanup();
         }
     }
-
-    // ─── Private helpers ────────────────────────────────────
 
     private void authenticatePlayer(ServerPlayer player) {
         UUID uuid = player.getUUID();
@@ -447,17 +625,14 @@ public class AuthManager {
         joinTimestamps.remove(uuid);
         lastReminder.remove(uuid);
 
-        // Teleport back
         if (config.limboEnabled) {
             restorePlayerPosition(player);
         }
 
-        // Set invincibility
         if (config.invincibilityDuration > 0) {
             invincibilityExpiry.put(uuid, System.currentTimeMillis() + (config.invincibilityDuration * 1000L));
         }
 
-        // Clear title
         PlayerUtil.clearTitle(player);
     }
 
@@ -517,7 +692,7 @@ public class AuthManager {
                     //?}
                 }
             }
-            // Fallback: just teleport in current dimension
+            // Fallback
             //? if <=1.21.1 {
             /*player.teleportTo(pos[0], pos[1], pos[2]);
             *///?} else {

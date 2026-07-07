@@ -36,7 +36,9 @@ mixinextras = { module = "io.github.llamalad7:mixinextras-common", version.ref =
 bcrypt = { module = "at.favre.lib:bcrypt", version.ref = "bcrypt" }
 bytes = { module = "at.favre.lib:bytes", version.ref = "bytes" }
 jetbrains-annotations = { module = "org.jetbrains:annotations", version = "24.1.0" }
+mysql = { module = "com.mysql:mysql-connector-j", version = "9.0.0" }
 
 [plugins]
 fabric-loom = { id = "fabric-loom", version.ref = "fabric-loom" }
 neoforged-moddev = { id = "net.neoforged.moddev", version.ref = "neogradle" }
+
