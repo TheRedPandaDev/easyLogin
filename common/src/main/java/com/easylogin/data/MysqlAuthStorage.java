@@ -16,9 +16,12 @@ public class MysqlAuthStorage implements AuthStorage {
 
     @Override
     public void load() throws Exception {
-        String password = System.getenv(config.passwordEnv);
-        if (password == null) {
-            password = "";
+        String password = config.dbPassword;
+        if ((password == null || password.isEmpty()) && config.passwordEnv != null && !config.passwordEnv.isEmpty()) {
+            password = System.getenv(config.passwordEnv);
+            if (password == null) {
+                password = "";
+            }
         }
         String url = "jdbc:mysql://" + config.dbHost + ":" + config.dbPort + "/" + config.dbDatabase + "?useSSL=false&allowPublicKeyRetrieval=true";
         this.pool = new DatabasePool(url, config.dbUsername, password, config.dbPoolSize, config.dbConnectTimeout);

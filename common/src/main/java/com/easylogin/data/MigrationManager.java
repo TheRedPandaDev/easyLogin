@@ -86,6 +86,41 @@ public class MigrationManager {
         return report;
     }
 
+    public static MigrationReport importSingleJson(Path jsonPath, Path reportOut, AuthStorage storage) throws Exception {
+        MigrationReport report = new MigrationReport();
+        Map<String, PlayerAccount> data = loadJson(jsonPath, report);
+        report.allTheMonsCount = data.size();
+        report.uniqueGlobalUsers = data.size();
+
+        String sourceServer = inferSourceServer(jsonPath);
+        int migratedUsers = 0;
+        int skippedUsers = 0;
+
+        for (Map.Entry<String, PlayerAccount> entry : data.entrySet()) {
+            PlayerAccount acc = entry.getValue();
+            String normalized = UsernameNormalizer.normalize(acc.getUsername());
+
+            try {
+                if (storage.getGlobalUser(normalized).isPresent()) {
+                    report.passwordConflicts.add(acc.getUsername());
+                    skippedUsers++;
+                    continue;
+                }
+
+                migrateSingleAccount(new IndexedAccount(sourceServer, entry.getKey(), acc), storage);
+                migratedUsers++;
+            } catch (Exception e) {
+                report.corruptedRecords.add(acc.getUsername() + ": " + e.getMessage());
+                skippedUsers++;
+            }
+        }
+
+        storage.recordMigrationRun(UUID.randomUUID().toString(), "single_json_import",
+                String.format("Imported accounts: %d. Skipped: %d.", migratedUsers, skippedUsers));
+        writeReportFile(report, reportOut);
+        return report;
+    }
+
     public static MigrationReport executeMigration(Path atmPath, Path cvPath, Path reportOut, AuthStorage storage) throws Exception {
         MigrationReport report = dryRun(atmPath, cvPath, reportOut);
 
@@ -292,6 +327,17 @@ public class MigrationManager {
         storage.saveServerIdentity(identity);
 
         storage.recordUuidHistory(identity.getId(), acc.source, identity.getCurrentUuid(), "migration");
+    }
+
+    private static String inferSourceServer(Path jsonPath) {
+        String lower = jsonPath.toString().toLowerCase(Locale.ROOT);
+        if (lower.contains("allthemons")) {
+            return "allthemons";
+        }
+        if (lower.contains("cobbleverse")) {
+            return "cobbleverse";
+        }
+        return "local";
     }
 
     private static Map<String, PlayerAccount> loadJson(Path path, MigrationReport report) {

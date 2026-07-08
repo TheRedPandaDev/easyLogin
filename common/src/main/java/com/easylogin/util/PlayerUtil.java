@@ -4,11 +4,7 @@ import com.easylogin.config.EasyLoginConfig;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.*;
-//? if <=1.21.1 {
-/*import net.minecraft.resources.ResourceLocation;
-*///?} else {
-import net.minecraft.resources.Identifier;
-//?}
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -29,11 +25,7 @@ public final class PlayerUtil {
      * Teleport a player to the limbo coordinates defined in config.
      */
     public static void teleportToLimbo(ServerPlayer player, EasyLoginConfig config) {
-        //? if <=1.21.1 {
-        /*player.teleportTo(config.limboX, config.limboY, config.limboZ);
-        *///?} else {
-        player.teleportTo((ServerLevel) player.level(), config.limboX, config.limboY, config.limboZ, java.util.Set.of(), player.getYRot(), player.getXRot(), true);
-        //?}
+        player.teleportTo((ServerLevel) player.level(), config.limboX, config.limboY, config.limboZ, java.util.EnumSet.noneOf(net.minecraft.world.entity.RelativeMovement.class), player.getYRot(), player.getXRot());
     }
 
     /**
@@ -77,17 +69,9 @@ public final class PlayerUtil {
      */
     public static void playSound(ServerPlayer player, String soundId) {
         try {
-            //? if <=1.21.1 {
-            /*ResourceLocation rl = ResourceLocation.parse(soundId);
-            *///?} else {
-            Identifier rl = Identifier.parse(soundId);
-            //?}
+            ResourceLocation rl = ResourceLocation.parse(soundId);
             Optional<SoundEvent> soundEvent = BuiltInRegistries.SOUND_EVENT.getOptional(rl);
-            //? if <=1.21.1 {
-            /*soundEvent.ifPresent(event -> player.playNotifySound(event, SoundSource.MASTER, 1.0f, 1.0f));
-            *///?} else {
-            soundEvent.ifPresent(event -> player.level().playSound(null, player.getX(), player.getY(), player.getZ(), event, SoundSource.MASTER, 1.0f, 1.0f));
-            //?}
+            soundEvent.ifPresent(event -> player.playNotifySound(event, SoundSource.MASTER, 1.0f, 1.0f));
         } catch (Exception e) {
             // Silently ignore invalid sound IDs
         }

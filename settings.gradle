@@ -48,18 +48,18 @@ plugins {
 rootProject.name = 'easyLogin'
 
 include('common')
-// include('fabric')
+include('fabric')
 include('neoforge')
-// include('forge')
+include('forge')
 
 stonecutter {
     shared {
-        versions '1.21.1', '1.21.11', '26.1'
-        vcsVersion = '26.1'
+        versions '1.21.1'
+        vcsVersion = '1.21.1'
     }
 }
 stonecutter.create(rootProject)
 stonecutter.create(project(':common'))
-// stonecutter.create(project(':fabric'))
+stonecutter.create(project(':fabric'))
 stonecutter.create(project(':neoforge'))
-// stonecutter.create(project(':forge'))
+stonecutter.create(project(':forge'))

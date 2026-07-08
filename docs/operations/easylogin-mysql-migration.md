@@ -6,7 +6,7 @@ This guide details the procedure for migrating legacy player JSON datastores fro
 
 1. MySQL Server running with a database named `bigbang_auth`.
 2. MySQL credentials configured in EasyLogin's `config.toml` (specifically `mode = "mysql"` under `[storage]`).
-3. Set the environment variable `EASYLOGIN_DB_PASSWORD` on each server launcher.
+3. Set the MySQL password directly in `config.toml` with `password = "..."` under `[storage]`.
 4. Have the legay JSON files (`players.json` or `players_global.json`) from both servers.
 
 ---

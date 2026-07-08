@@ -31,11 +31,7 @@ public class AuthCommand {
                 // /auth status
                 .then(Commands.literal("status")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(2);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(2)));
-                            //?}
+                            return src.hasPermission(2);
                         })
                         .executes(ctx -> {
                             CommandSourceStack source = ctx.getSource();
@@ -59,11 +55,7 @@ public class AuthCommand {
                 // /auth reload
                 .then(Commands.literal("reload")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .executes(ctx -> {
                             reloadAction.run();
@@ -78,11 +70,7 @@ public class AuthCommand {
                 // /auth force-login <nickname>
                 .then(Commands.literal("force-login")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .then(Commands.argument("nickname", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -103,11 +91,7 @@ public class AuthCommand {
                 // /auth force-register <nickname> <password>
                 .then(Commands.literal("force-register")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .then(Commands.argument("nickname", StringArgumentType.word())
                                 .then(Commands.argument("password", StringArgumentType.word())
@@ -148,11 +132,7 @@ public class AuthCommand {
                 // /auth reset-password <nickname>
                 .then(Commands.literal("reset-password")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .then(Commands.argument("nickname", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -190,11 +170,7 @@ public class AuthCommand {
                 // /auth purge <nickname> (requires confirm)
                 .then(Commands.literal("purge")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .then(Commands.argument("nickname", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -239,11 +215,7 @@ public class AuthCommand {
                 // /auth lookup <nickname>
                 .then(Commands.literal("lookup")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
                         .then(Commands.argument("nickname", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -281,12 +253,27 @@ public class AuthCommand {
                 // /auth migration
                 .then(Commands.literal("migration")
                         .requires(src -> {
-                            //? if <=1.21.1 {
-                            /*return src.hasPermission(3);
-                            *///?} else {
-                            return src.permissions().hasPermission(new net.minecraft.server.permissions.Permission.HasCommandLevel(net.minecraft.server.permissions.PermissionLevel.byId(3)));
-                            //?}
+                            return src.hasPermission(3);
                         })
+                        .then(Commands.literal("import")
+                                .then(Commands.argument("jsonPath", StringArgumentType.string())
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            String jsonStr = StringArgumentType.getString(ctx, "jsonPath");
+
+                                            CompletableFuture.runAsync(() -> {
+                                                try {
+                                                    java.nio.file.Path json = java.nio.file.Paths.get(jsonStr);
+                                                    java.nio.file.Path report = json.getParent().resolve("migration_report.txt");
+                                                    com.easylogin.data.MigrationManager.MigrationReport rep = com.easylogin.data.MigrationManager.importSingleJson(json, report, authManager.getDataStore().getStorage());
+                                                    source.sendSuccess(() -> Component.literal("§6[Migration Import] §aCompleted! Report saved to: §e" + report.toAbsolutePath()), false);
+                                                    source.sendSuccess(() -> Component.literal(String.format("§7Imported: %d, Skipped/Conflicts: %d", rep.uniqueGlobalUsers - rep.passwordConflicts.size() - rep.corruptedRecords.size(), rep.passwordConflicts.size() + rep.corruptedRecords.size())), false);
+                                                } catch (Exception e) {
+                                                    source.sendFailure(Component.literal("§cImport failed: " + e.getMessage()));
+                                                }
+                                            });
+                                            return 1;
+                                        })))
                         .then(Commands.literal("status")
                                 .executes(ctx -> {
                                     CommandSourceStack source = ctx.getSource();

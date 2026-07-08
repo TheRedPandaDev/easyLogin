@@ -3,3 +3,42 @@ plugins {
     alias(libs.plugins.neoforged.moddev) apply false
     id 'dev.kikugie.stonecutter' apply false
 }
+
+tasks.register('collectJars') {
+    group = 'build'
+    description = 'Collects all built jars and places them in the loader build/libs folders.'
+    
+    doLast {
+        def rootDir = rootProject.projectDir
+        fileTree(dir: rootDir, include: '**/versions/*/build/libs/*.jar').each { File jarFile ->
+            def pathStr = jarFile.absolutePath.replace('\\', '/')
+            if (!pathStr.contains('/common/')) {
+                def parts = pathStr.split('/')
+                def versionsIdx = parts.findIndexOf { it == 'versions' }
+                if (versionsIdx > 0) {
+                    def loader = parts[versionsIdx - 1]
+                    def targetDir = file("${rootDir}/${loader}/build/libs")
+                    targetDir.mkdirs()
+                    copy {
+                        from jarFile
+                        into targetDir
+                    }
+                    logger.lifecycle("Copied ${jarFile.name} to ${targetDir.absolutePath}")
+                }
+            }
+        }
+    }
+}
+
+subprojects { subproject ->
+    subproject.afterEvaluate {
+        subproject.tasks.matching { it.name == 'build' || it.name == 'assemble' }.all { t ->
+            t.finalizedBy(project.tasks.matching { it.name == 'collectJars' })
+        }
+    }
+}
+
+
+
+
+

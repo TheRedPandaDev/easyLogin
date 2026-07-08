@@ -82,7 +82,7 @@ processResources {
             'version'                      : version,
             'group'                        : project.group,
             'minecraft_version'            : libs.findVersion('minecraft').get().requiredVersion,
-            'minecraft_version_range'      : "[${libs.findVersion('minecraft').get().requiredVersion}, 1.22)",
+            'minecraft_version_range'      : ">=${libs.findVersion('minecraft').get().requiredVersion}",
             'fabric_version'               : libs.findVersion('fabric-api').get().requiredVersion,
             'fabric_loader_version'        : libs.findVersion('fabric-loader').get().requiredVersion,
             'mod_name'                     : mod_name,

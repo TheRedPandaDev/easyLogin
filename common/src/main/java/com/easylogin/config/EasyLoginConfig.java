@@ -82,7 +82,8 @@ public class EasyLoginConfig {
     public int dbPort = 3306;
     public String dbDatabase = "bigbang_auth";
     public String dbUsername = "easylogin";
-    public String passwordEnv = "EASYLOGIN_DB_PASSWORD";
+    public String dbPassword = "";
+    public String passwordEnv = "";
     public int dbPoolSize = 10;
     public int dbConnectTimeout = 10;
 
@@ -191,6 +192,7 @@ public class EasyLoginConfig {
             dbPort = getInt(storage, "port", dbPort);
             dbDatabase = getString(storage, "database", dbDatabase);
             dbUsername = getString(storage, "username", dbUsername);
+            dbPassword = getString(storage, "password", dbPassword);
             passwordEnv = getString(storage, "password_env", passwordEnv);
             dbPoolSize = getInt(storage, "pool_size", dbPoolSize);
             dbConnectTimeout = getInt(storage, "connect_timeout_seconds", dbConnectTimeout);
@@ -311,6 +313,7 @@ public class EasyLoginConfig {
             w.write("port = " + dbPort + "\n");
             w.write("database = \"" + dbDatabase + "\"\n");
             w.write("username = \"" + dbUsername + "\"\n");
+            w.write("password = \"" + escapeToml(dbPassword) + "\"\n");
             w.write("password_env = \"" + passwordEnv + "\"\n");
             w.write("pool_size = " + dbPoolSize + "\n");
             w.write("connect_timeout_seconds = " + dbConnectTimeout + "\n\n");
