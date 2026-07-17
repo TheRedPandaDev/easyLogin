@@ -6,6 +6,7 @@ import com.easylogin.data.AuthStorage;
 import com.easylogin.data.GlobalUser;
 import com.easylogin.data.PlayerDataStore;
 import com.easylogin.data.ServerIdentity;
+import com.easylogin.mods.ClientModTracker;
 import com.easylogin.platform.PlatformHelper;
 import com.easylogin.util.MessageFormatter;
 import com.easylogin.util.PlayerUtil;
@@ -143,6 +144,7 @@ public class AuthManager {
         logoutCooldowns.remove(uuid);
         invincibilityExpiry.remove(uuid);
         isRegisteredCache.remove(uuid);
+        ClientModTracker.removePlayer(uuid);
     }
 
     public void attemptLogin(ServerPlayer player, String password) {

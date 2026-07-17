@@ -1,7 +1,9 @@
 package com.easylogin.fabric;
 
 import com.easylogin.platform.PlatformHelper;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.nio.file.Path;
@@ -40,5 +42,10 @@ public class FabricPlatformHelper implements PlatformHelper {
     @Override
     public Path getWorldConfigDir(net.minecraft.server.MinecraftServer server) {
         return server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("serverconfig");
+    }
+
+    @Override
+    public boolean hasClientChannel(ServerPlayer player, ResourceLocation channel) {
+        return ServerPlayNetworking.canSend(player, channel);
     }
 }

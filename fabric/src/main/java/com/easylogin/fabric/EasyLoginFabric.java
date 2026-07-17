@@ -6,6 +6,7 @@ import com.easylogin.command.*;
 import com.easylogin.config.EasyLoginConfig;
 import com.easylogin.data.PlayerDataStore;
 import com.easylogin.handler.ProtectionHandler;
+import com.easylogin.util.MessageFormatter;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -54,6 +55,7 @@ public class EasyLoginFabric implements DedicatedServerModInitializer {
             ChangePasswordCommand.register(dispatcher, authManager);
             LogoutCommand.register(dispatcher, authManager);
             AuthCommand.register(dispatcher, authManager, config, () -> config.load());
+            ModMessageCommand.registerAll(dispatcher, config.mods, authManager.getFormatter());
             EasyLoginConstants.LOGGER.info("EasyLogin commands registered.");
         });
     }

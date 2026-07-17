@@ -5,8 +5,12 @@ import com.easylogin.EasyLoginConstants;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Simple TOML-like config parser and manager.
@@ -96,6 +100,22 @@ public class EasyLoginConfig {
     public boolean webstoreEnabled = false;
     public String webstoreUrl = "http://localhost:3000/api/v1/auth_sync";
     public String webstoreToken = "webstore_secret_token";
+
+    // ─── Mod Messages ────────────────────────────────────────
+    public final List<ModEntry> mods = new ArrayList<>();
+
+    public static class ModEntry {
+        public String id;
+        public String command = "";
+        public String message = "";
+        public String channel = "";
+
+        public String getCommandName() {
+            String c = command;
+            if (c.startsWith("/")) c = c.substring(1);
+            return c;
+        }
+    }
 
     private final Path configFile;
 
@@ -209,7 +229,29 @@ public class EasyLoginConfig {
             webstoreUrl = getString(webstore, "url", webstoreUrl);
             webstoreToken = getString(webstore, "token", webstoreToken);
 
-            EasyLoginConstants.LOGGER.info("Configuration loaded successfully");
+            // Mod Messages
+            mods.clear();
+            Map<String, String> modSection = sections.getOrDefault("mods", Map.of());
+            // Parse mod entries using naming pattern: mod_<id>_<field>
+            Pattern modKey = Pattern.compile("mod_(\\w+)_(command|message|channel)");
+            // Collect unique ids
+            java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+            for (String key : modSection.keySet()) {
+                Matcher m = modKey.matcher(key);
+                if (m.matches()) ids.add(m.group(1));
+            }
+            for (String id : ids) {
+                ModEntry entry = new ModEntry();
+                entry.id = id;
+                entry.command = getString(modSection, "mod_" + id + "_command", "");
+                entry.message = getString(modSection, "mod_" + id + "_message", "");
+                entry.channel = getString(modSection, "mod_" + id + "_channel", "");
+                if (!entry.command.isEmpty() && !entry.message.isEmpty()) {
+                    mods.add(entry);
+                }
+            }
+
+            EasyLoginConstants.LOGGER.info("Configuration loaded successfully ({} mod entries)", mods.size());
 
         } catch (IOException e) {
             EasyLoginConstants.LOGGER.error("Failed to load configuration", e);
@@ -330,7 +372,19 @@ public class EasyLoginConfig {
             w.write("# Enable WebStore identity integration\n");
             w.write("enabled = " + webstoreEnabled + "\n");
             w.write("url = \"" + escapeToml(webstoreUrl) + "\"\n");
-            w.write("token = \"" + escapeToml(webstoreToken) + "\"\n");
+            w.write("token = \"" + escapeToml(webstoreToken) + "\"\n\n");
+
+            w.write("[mods]\n");
+            w.write("# Custom commands that show a message when a player runs them.\n");
+            w.write("# Format: mod_<id>_command = \"/<command>\", mod_<id>_message = \"<message>\", mod_<id>_channel = \"<mod:channel>\"\n");
+            w.write("# If channel is set, the command checks if the player's client has that network channel.\n");
+            w.write("# If the player HAS the channel (has the mod), the command does nothing silently.\n");
+            w.write("# If the player DOESN'T have the channel, the message is shown.\n");
+            w.write("# If channel is empty, the message is always shown.\n");
+            w.write("# Example:\n");
+            w.write("# voice_command = \"/voice\"\n");
+            w.write("# voice_message = \"&cInstall Simple Voice Chat to use voice chat!\"\n");
+            w.write("# voice_channel = \"voicechat:voicechat\"\n");
         }
     }
 

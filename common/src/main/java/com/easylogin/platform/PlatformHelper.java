@@ -1,8 +1,7 @@
 package com.easylogin.platform;
 
-import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvent;
 
 import java.nio.file.Path;
 import java.util.ServiceLoader;
@@ -31,4 +30,12 @@ public interface PlatformHelper {
      * Returns the world-specific config directory path (e.g., world/serverconfig/).
      */
     Path getWorldConfigDir(net.minecraft.server.MinecraftServer server);
+
+    /**
+     * Check if the player's client has registered a handler for the given network channel.
+     * Used to detect if the player has a specific mod installed client-side.
+     */
+    default boolean hasClientChannel(ServerPlayer player, ResourceLocation channel) {
+        return false;
+    }
 }

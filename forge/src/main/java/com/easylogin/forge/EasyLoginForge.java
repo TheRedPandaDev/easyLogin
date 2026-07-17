@@ -61,6 +61,7 @@ public class EasyLoginForge {
         ChangePasswordCommand.register(event.getDispatcher(), authManager);
         LogoutCommand.register(event.getDispatcher(), authManager);
         AuthCommand.register(event.getDispatcher(), authManager, config, () -> config.load());
+        ModMessageCommand.registerAll(event.getDispatcher(), config.mods, authManager.getFormatter());
         EasyLoginConstants.LOGGER.info("EasyLogin commands registered.");
     }
 }

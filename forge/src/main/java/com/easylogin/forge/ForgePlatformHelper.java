@@ -1,6 +1,7 @@
 package com.easylogin.forge;
 
 import com.easylogin.platform.PlatformHelper;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.fml.loading.FMLPaths;
 
@@ -15,9 +16,6 @@ public class ForgePlatformHelper implements PlatformHelper {
 
     @Override
     public boolean isFakePlayer(ServerPlayer player) {
-        // Forge 1.21.1 no longer ships FakePlayer in common.util.
-        // Heuristic: real players are always vanilla ServerPlayer instances;
-        // FakePlayers created by mods subclass ServerPlayer.
         return player.getClass() != ServerPlayer.class;
     }
 
@@ -29,5 +27,10 @@ public class ForgePlatformHelper implements PlatformHelper {
     @Override
     public Path getWorldConfigDir(net.minecraft.server.MinecraftServer server) {
         return server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("serverconfig");
+    }
+
+    @Override
+    public boolean hasClientChannel(ServerPlayer player, ResourceLocation channel) {
+        return false;
     }
 }
