@@ -21,6 +21,7 @@ public class EasyLoginFabric implements DedicatedServerModInitializer {
     @Override
     public void onInitializeServer() {
         EasyLoginConstants.LOGGER.info("EasyLogin (Fabric) initializing...");
+        com.easylogin.util.LogSanitizer.init();
 
         config = new EasyLoginConfig(com.easylogin.platform.PlatformHelper.INSTANCE.getConfigDir());
         config.load();

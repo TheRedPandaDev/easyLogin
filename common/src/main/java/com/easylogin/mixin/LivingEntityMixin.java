@@ -12,6 +12,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin {
 
+    @Inject(method = "isInvulnerableTo", at = @At("HEAD"), cancellable = true)
+    private void onIsInvulnerableTo(DamageSource source, CallbackInfoReturnable<Boolean> cir) {
+        LivingEntity entity = (LivingEntity) (Object) this;
+        AuthManager auth = AuthManager.INSTANCE;
+        if (auth == null)
+            return;
+
+        if (entity instanceof ServerPlayer player) {
+            if (auth.shouldBlock(player) || auth.isInvincible(player)) {
+                if (auth.getConfig().blockDamageReceived) {
+                    cir.setReturnValue(true);
+                }
+            }
+        }
+    }
+
     @Inject(method = "hurt", at = @At("HEAD"), cancellable = true)
     private void onHurt(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         LivingEntity entity = (LivingEntity) (Object) this;

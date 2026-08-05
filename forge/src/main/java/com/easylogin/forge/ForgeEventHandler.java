@@ -53,6 +53,44 @@ public class ForgeEventHandler {
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onLivingAttack(net.minecraftforge.event.entity.living.LivingAttackEvent event) {
+        Entity entity = event.getEntity();
+        if (entity instanceof ServerPlayer player) {
+            if ((config.blockDamageReceived && protectionHandler.shouldBlock(player))
+                    || authManager.isInvincible(player)) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+        Entity source = event.getSource().getEntity();
+        if (source instanceof ServerPlayer attacker) {
+            if (config.blockDamageDealt
+                    && (protectionHandler.shouldBlock(attacker) || authManager.isInvincible(attacker))) {
+                event.setCanceled(true);
+            }
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onLivingHurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
+        Entity entity = event.getEntity();
+        if (entity instanceof ServerPlayer player) {
+            if ((config.blockDamageReceived && protectionHandler.shouldBlock(player))
+                    || authManager.isInvincible(player)) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+        Entity source = event.getSource().getEntity();
+        if (source instanceof ServerPlayer attacker) {
+            if (config.blockDamageDealt
+                    && (protectionHandler.shouldBlock(attacker) || authManager.isInvincible(attacker))) {
+                event.setCanceled(true);
+            }
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onDamage(LivingDamageEvent event) {
         Entity entity = event.getEntity();
         if (entity instanceof ServerPlayer player) {

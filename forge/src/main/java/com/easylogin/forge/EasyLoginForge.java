@@ -22,6 +22,7 @@ public class EasyLoginForge {
 
     public EasyLoginForge() {
         EasyLoginConstants.LOGGER.info("EasyLogin (Forge) initializing...");
+        com.easylogin.util.LogSanitizer.init();
 
         config = new EasyLoginConfig(com.easylogin.platform.PlatformHelper.INSTANCE.getConfigDir());
         config.load();

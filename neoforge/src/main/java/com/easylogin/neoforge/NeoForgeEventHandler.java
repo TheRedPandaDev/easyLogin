@@ -60,6 +60,25 @@ public class NeoForgeEventHandler {
     // ─── Damage ─────────────────────────────────────────────
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onIncomingDamage(net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent event) {
+        Entity entity = event.getEntity();
+        if (entity instanceof ServerPlayer player) {
+            if ((config.blockDamageReceived && protectionHandler.shouldBlock(player))
+                    || authManager.isInvincible(player)) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+        Entity source = event.getSource().getEntity();
+        if (source instanceof ServerPlayer attacker) {
+            if (config.blockDamageDealt
+                    && (protectionHandler.shouldBlock(attacker) || authManager.isInvincible(attacker))) {
+                event.setCanceled(true);
+            }
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onDamage(LivingDamageEvent.Pre event) {
         Entity entity = event.getEntity();
         if (entity instanceof ServerPlayer player) {

@@ -4,6 +4,7 @@ import com.easylogin.auth.AuthManager;
 import com.easylogin.config.EasyLoginConfig;
 import com.easylogin.handler.ProtectionHandler;
 import com.easylogin.util.PlayerUtil;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.*;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
@@ -36,6 +37,21 @@ public class FabricEventHandler {
         // ─── Server Tick ────────────────────────────────────
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             authManager.onServerTick(server);
+        });
+
+        // ─── Damage Protection ──────────────────────────────
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
+            if (entity instanceof ServerPlayer player) {
+                if (config.blockDamageReceived && (protectionHandler.shouldBlock(player) || authManager.isInvincible(player))) {
+                    return false;
+                }
+            }
+            if (source.getEntity() instanceof ServerPlayer attacker) {
+                if (config.blockDamageDealt && (protectionHandler.shouldBlock(attacker) || authManager.isInvincible(attacker))) {
+                    return false;
+                }
+            }
+            return true;
         });
 
         // ─── Block Interaction ──────────────────────────────

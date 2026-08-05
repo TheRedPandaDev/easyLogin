@@ -53,6 +53,9 @@ dependencies {
     implementation libs.bcrypt
     implementation libs.mysql
 
+    compileOnly 'org.apache.logging.log4j:log4j-api:2.20.0'
+    compileOnly 'org.apache.logging.log4j:log4j-core:2.20.0'
+
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
     testImplementation 'org.slf4j:slf4j-api:2.0.12'

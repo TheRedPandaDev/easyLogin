@@ -92,6 +92,12 @@ public class AuthManager {
         joinTimestamps.put(uuid, System.currentTimeMillis());
         lastReminder.put(uuid, 0L);
 
+        // Disable gravity & clear movement velocity to prevent falling/jitter
+        player.setNoGravity(true);
+        player.setDeltaMovement(0, 0, 0);
+        player.resetFallDistance();
+
+        // Save position before limbo
         savePlayerPosition(player);
 
         if (config.limboEnabled) {
@@ -134,6 +140,8 @@ public class AuthManager {
     public void onPlayerLeave(ServerPlayer player) {
         if (PlatformHelper.INSTANCE.isFakePlayer(player))
             return;
+
+        player.setNoGravity(false);
 
         UUID uuid = player.getUUID();
         authenticated.remove(uuid);
@@ -589,6 +597,10 @@ public class AuthManager {
             }
 
             if (config.blockMovement) {
+                player.setNoGravity(true);
+                player.setDeltaMovement(0, 0, 0);
+                player.resetFallDistance();
+
                 if (config.limboEnabled) {
                     double dx = Math.abs(player.getX() - config.limboX);
                     double dz = Math.abs(player.getZ() - config.limboZ);
@@ -602,7 +614,12 @@ public class AuthManager {
                         double dy = Math.abs(player.getY() - pos[1]);
                         double dz = Math.abs(player.getZ() - pos[2]);
 
+<<<<<<< HEAD
                         if (dx > 0.1 || dy > 0.1 || dz > 0.1) {
+=======
+                        // Reset position smoothly if player moved
+                        if (dx > 0.01 || dy > 0.01 || dz > 0.01) {
+>>>>>>> 15cedab (fix: cancel mob damage, stabilize flight state on join, and sanitize console command logs)
                             player.teleportTo(pos[0], pos[1], pos[2]);
                             player.setDeltaMovement(0, 0, 0);
                             player.hurtMarked = true;
@@ -623,6 +640,14 @@ public class AuthManager {
         joinTimestamps.remove(uuid);
         lastReminder.remove(uuid);
 
+<<<<<<< HEAD
+=======
+        // Restore gravity & reset fall distance
+        player.setNoGravity(false);
+        player.resetFallDistance();
+
+        // Teleport back
+>>>>>>> 15cedab (fix: cancel mob damage, stabilize flight state on join, and sanitize console command logs)
         if (config.limboEnabled) {
             restorePlayerPosition(player);
         }

@@ -8,6 +8,9 @@
   "contact": {},
   "license": "${license}",
   "environment": "server",
+  "mixins": [
+    "easylogin.mixins.json"
+  ],
   "entrypoints": {
     "server": [
       "com.easylogin.fabric.EasyLoginFabric"

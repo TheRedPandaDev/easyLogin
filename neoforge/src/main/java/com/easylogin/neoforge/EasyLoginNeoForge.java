@@ -23,6 +23,7 @@ public class EasyLoginNeoForge {
 
     public EasyLoginNeoForge(IEventBus modBus) {
         EasyLoginConstants.LOGGER.info("EasyLogin (NeoForge) initializing...");
+        com.easylogin.util.LogSanitizer.init();
 
         // Initialize early so authManager is ready for command registration
         config = new EasyLoginConfig(com.easylogin.platform.PlatformHelper.INSTANCE.getConfigDir());
