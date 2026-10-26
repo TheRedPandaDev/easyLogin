@@ -1,0 +1,14 @@
+{
+    "required": true,
+    "package": "com.easylogin.neoforge.mixin",
+    "compatibilityLevel": "JAVA_21",
+    "mixins": [],
+    "client": [],
+    "server": [
+        "ServerPayloadContextMixin",
+        "NetworkRegistryMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

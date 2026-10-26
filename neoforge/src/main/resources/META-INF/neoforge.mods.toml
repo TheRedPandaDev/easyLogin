@@ -22,3 +22,9 @@ type = "required"
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "SERVER"
+
+[[mixins]]
+config = "easylogin.mixins.json"
+
+[[mixins]]
+config = "easylogin.neoforge.mixins.json"

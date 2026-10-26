@@ -9,11 +9,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -156,6 +158,14 @@ public class NeoForgeEventHandler {
     }
 
     // ─── Item Drop ──────────────────────────────────────────
+
+    // Pickup has no serverbound packet, so it needs an authoritative event guard.
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onItemPickup(ItemEntityPickupEvent.Pre event) {
+        if (event.getPlayer() instanceof ServerPlayer player && protectionHandler.shouldBlock(player)) {
+            event.setCanPickup(TriState.FALSE);
+        }
+    }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onItemDrop(ItemTossEvent event) {
